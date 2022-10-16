@@ -1,3 +1,3 @@
-mod parser;
+mod regex_parser;
 
-pub use parser::{Parser, ParsingError, Tree};
+pub use regex_parser::{Parser, ParsingError, Tree};
