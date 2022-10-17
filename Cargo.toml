@@ -1,5 +1,5 @@
 [package]
-name = "mnre"
+name = "repa"
 version = "0.1.0"
 edition = "2021"
 
