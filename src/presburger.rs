@@ -1,9 +1,43 @@
+//! Presburger arithmetic formula, term and its parser.
+//!
+//! # Syntax
+//!
+//! ```text
+//! f := 'true' | 'false'               # logical constants
+//!    | f 'and' f | f 'or' f | 'not' f # logical operations
+//!    | 'for' 'all' xs '.' f           # "for all" quantifier
+//!    | 'for' 'some' xs '.' f          # "for some" quantifier
+//!    | t op t                         # comparison tests
+//!    | k '|' t | '-' k '|' t          # divisible test
+//!    | '(' f ')'                      # group
+//!
+//! xs := x | x ',' xs
+//! op ::= '=' | '!='
+//!      | '<' | '>' | '<=' | '>='
+//!
+//! t := k t | k '*' t                  # multiplication
+//!    | t '+' t | t '-' t              # addition and subtraction
+//!    | '+' t | '-' t                  # unary operators
+//!    | k                              # constant
+//!    | x                              # variable
+//!    | '(' t ')'                      # group
+//!
+//! k ::= [0-9]+
+//! x ::= [a-zA-Z] [0-9a-zA-Z]*
+//! ```
+//!
+//! Notes:
+//!
+//!   - A variables name cannot be reserved names in Presburger arithmetic formula (e.g. `for`, `all` and `true`)
+//!   - A number constant cannot be followed by variables and reserved names without whitespaces.
+
 use std::cell::Cell;
 use std::fmt::Display;
 
 use num_bigint::BigInt;
 use thiserror::Error;
 
+/// A Presburger arithmetic formula.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Formula {
     True,
@@ -17,6 +51,7 @@ pub enum Formula {
     ForSome(Vec<String>, Box<Formula>),
 }
 
+/// A Presburger arithmetic term.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Term {
     Const(BigInt),
@@ -137,7 +172,7 @@ pub enum ParsingError {
     #[error("'{1}' is expected")]
     ExpectedChar(usize, char),
     #[error("end-of-string is expected")]
-    ExpectedEof(usize),
+    ExpectedEndOfString(usize),
     #[error("formula is expected")]
     ExpectedFormula(usize),
     #[error("term is expected")]
@@ -147,9 +182,24 @@ pub enum ParsingError {
     #[error("'{1}' is unexpected")]
     UnexpectedChar(usize, char),
     #[error("end-of-string is unexpected")]
-    UnexpectedEof(usize),
+    UnexpectedEndOfString(usize),
     #[error("token `{1}` is unexpected")]
     UnexpectedToken(usize, TokenKind),
+}
+
+impl ParsingError {
+    pub fn offset(&self) -> usize {
+        match *self {
+            ParsingError::ExpectedChar(offset, _) => offset,
+            ParsingError::ExpectedEndOfString(offset) => offset,
+            ParsingError::ExpectedFormula(offset) => offset,
+            ParsingError::ExpectedTerm(offset) => offset,
+            ParsingError::InvalidNumber(offset) => offset,
+            ParsingError::UnexpectedChar(offset, _) => offset,
+            ParsingError::UnexpectedEndOfString(offset) => offset,
+            ParsingError::UnexpectedToken(offset, _) => offset,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -181,7 +231,7 @@ impl<'s> FormulaParser<'s> {
         };
 
         if !self.end_of_string() {
-            return Err(ParsingError::ExpectedEof(self.offset()));
+            return Err(ParsingError::ExpectedEndOfString(self.offset()));
         }
 
         Ok(formula)
@@ -590,7 +640,7 @@ impl<'s> FormulaParser<'s> {
             .chars()
             .next()
             .map(|x| Ok(x))
-            .unwrap_or(Err(ParsingError::UnexpectedEof(self.offset())))
+            .unwrap_or(Err(ParsingError::UnexpectedEndOfString(self.offset())))
     }
 
     fn next_char(&self) {
@@ -624,7 +674,7 @@ fn parse_term(source: &str) -> Result<Term, ParsingError> {
     };
 
     if !parser.end_of_string() {
-        return Err(ParsingError::ExpectedEof(parser.offset()));
+        return Err(ParsingError::ExpectedEndOfString(parser.offset()));
     }
 
     Ok(term)

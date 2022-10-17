@@ -1,8 +1,47 @@
+//! Regular expression syntax and its parser.
+//!
+//! # Syntax
+//!
+//! ```text
+//! r ::= r r                                            # concat
+//!     | r '|' r                                        # alternation
+//!     | r '?' | r '*' | r '+'                          # repetition
+//!     | r '{' n '}' | r '{' n ',}' | r '{' n ',' n '}'
+//!     | '(' r ')'                                      # capture
+//!     | '(?:' r ')'                                    # group
+//!     | '.'                                            # dot
+//!     | '[' k ']'                                      # character class
+//!     | '{' x '}'                                      # variable increment
+//!     | c                                              # literal
+//!     | '^' | '$'                                      # zero-width assertion
+//!     | '\b' | '\B' | '\A' | '\z'
+//!     | '\d' | '\D' | '\s' | '\S' | '\w' | '\W'        # escape sequence character class
+//!
+//! k ::= k k | c | c '-' c
+//!     | '\d' | '\D' | '\s' | '\S' | '\w' | '\W'
+//!
+//! n ::= [0-9]+
+//! x ::= [a-zA-Z] [0-9a-zA-Z]*
+//! c ::= 'a' | 'b' | ...
+//!     | '\n' | '\r' | '\t'
+//!     | '\|' | '\?' | '\*' | '\+' |
+//!     | '\{' | '\}' | '\(' | '\)' | '\[' | '\]'
+//!     | '\.' | '\^' | '\$' | '\\' | '\"' | '\''
+//!     | '\u' [0-9a-fA-F]{4} | '\U' [0-9a-fA-F]{4}
+//! ```
+//!
+//! Notes:
+//!
+//!   - A variables name cannot be reserved names in Presburger arithmetic formula (e.g. `for`, `all` and `true`)
+//!   - A bounded quantifier must be ordered, so `a{2,1}` is invalid.
+//!   - A character range in class also musb be ordered, so `[b-a]` is invalid.
+
 use std::cell::Cell;
 
 use once_cell::sync::Lazy;
 use thiserror::Error;
 
+/// A regular expression pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Pattern {
     Alternation(Vec<Pattern>),
@@ -72,7 +111,7 @@ pub enum ParsingError {
     #[error("'{1}' is expected")]
     ExpectedChar(usize, char),
     #[error("end-of-string is expected")]
-    ExpectedEof(usize),
+    ExpectedEndOfString(usize),
     #[error("digit is expected")]
     ExpectedDigit(usize),
     #[error("class item is invalid")]
@@ -94,7 +133,7 @@ pub enum ParsingError {
     #[error("there is unclosed group")]
     UnclosedGroup(usize),
     #[error("end-of-string is unexpected")]
-    UnexpectedEof(usize),
+    UnexpectedEndOfString(usize),
     #[error("escape sequence is unknown")]
     UnknownEscape(usize),
     #[error("group kind specifier is unknown")]
@@ -105,7 +144,7 @@ impl ParsingError {
     pub fn offset(&self) -> usize {
         match *self {
             ParsingError::ExpectedChar(offset, _) => offset,
-            ParsingError::ExpectedEof(offset) => offset,
+            ParsingError::ExpectedEndOfString(offset) => offset,
             ParsingError::ExpectedDigit(offset) => offset,
             ParsingError::InvalidClassItem(offset) => offset,
             ParsingError::InvalidDigit(offset) => offset,
@@ -116,7 +155,7 @@ impl ParsingError {
             ParsingError::OutOfOrderClassRange(offset) => offset,
             ParsingError::OutOfOrderQuantifier(offset) => offset,
             ParsingError::UnclosedGroup(offset) => offset,
-            ParsingError::UnexpectedEof(offset) => offset,
+            ParsingError::UnexpectedEndOfString(offset) => offset,
             ParsingError::UnknownEscape(offset) => offset,
             ParsingError::UnknownGroupKind(offset) => offset,
         }
@@ -142,7 +181,7 @@ impl<'s> PatternParser<'s> {
     pub fn parse(&self) -> Result<Pattern, ParsingError> {
         let child = self.parse_alternation()?;
         if !self.end_of_string() {
-            return Err(ParsingError::ExpectedEof(self.offset()));
+            return Err(ParsingError::ExpectedEndOfString(self.offset()));
         }
         Ok(child)
     }
@@ -529,7 +568,7 @@ impl<'s> PatternParser<'s> {
             .chars()
             .next()
             .map(|x| Ok(x))
-            .unwrap_or(Err(ParsingError::UnexpectedEof(self.offset())))
+            .unwrap_or(Err(ParsingError::UnexpectedEndOfString(self.offset())))
     }
 
     fn next_char(&self) {
@@ -639,7 +678,7 @@ fn test_parse_atom() {
     assert_eq!(parse("?"), Err(ParsingError::NothingToRepeat(0)));
     assert_eq!(parse("*"), Err(ParsingError::NothingToRepeat(0)));
     assert_eq!(parse("+"), Err(ParsingError::NothingToRepeat(0)));
-    assert_eq!(parse("{"), Err(ParsingError::UnexpectedEof(1)));
+    assert_eq!(parse("{"), Err(ParsingError::UnexpectedEndOfString(1)));
     assert_eq!(parse("{1"), Err(ParsingError::NothingToRepeat(0)));
     assert_eq!(parse("{x}"), Ok(Pattern::Increment("x".to_string())));
     assert_eq!(
@@ -694,7 +733,7 @@ fn test_parse_atom() {
     assert_eq!(parse("\\\""), Ok(Pattern::Literal('"')));
     assert_eq!(parse("\\'"), Ok(Pattern::Literal('\'')));
     assert_eq!(parse("\\]"), Ok(Pattern::Literal(']')));
-    assert_eq!(parse("\\"), Err(ParsingError::UnexpectedEof(1)));
+    assert_eq!(parse("\\"), Err(ParsingError::UnexpectedEndOfString(1)));
     assert_eq!(parse("\\j"), Err(ParsingError::UnknownEscape(0)));
     assert_eq!(parse("a"), Ok(Pattern::Literal('a')));
     assert_eq!(parse("あ"), Ok(Pattern::Literal('あ')));
