@@ -173,21 +173,21 @@ impl Display for TokenKind {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ParsingError {
-    #[error("'{1}' is expected")]
+    #[error("Character '{1}' is expected")]
     ExpectedChar(usize, char),
-    #[error("end-of-string is expected")]
+    #[error("End-of-string is expected")]
     ExpectedEndOfString(usize),
-    #[error("formula is expected")]
+    #[error("Formula is expected")]
     ExpectedFormula(usize),
-    #[error("term is expected")]
+    #[error("Term is expected")]
     ExpectedTerm(usize),
-    #[error("number is invalid")]
+    #[error("Number is invalid")]
     InvalidNumber(usize),
     #[error("'{1}' is unexpected")]
     UnexpectedChar(usize, char),
-    #[error("end-of-string is unexpected")]
+    #[error("End-of-string is unexpected")]
     UnexpectedEndOfString(usize),
-    #[error("token `{1}` is unexpected")]
+    #[error("Token `{1}` is unexpected")]
     UnexpectedToken(usize, TokenKind),
 }
 

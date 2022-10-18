@@ -106,35 +106,35 @@ static SPACE: Lazy<Vec<ClassItem>> = Lazy::new(|| {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ParsingError {
-    #[error("'{1}' is expected")]
+    #[error("Character '{1}' is expected")]
     ExpectedChar(usize, char),
-    #[error("end-of-string is expected")]
+    #[error("End-of-string is expected")]
     ExpectedEndOfString(usize),
-    #[error("digit is expected")]
+    #[error("Digit is expected")]
     ExpectedDigit(usize),
-    #[error("class item is invalid")]
+    #[error("Class item is invalid")]
     InvalidClassItem(usize),
-    #[error("digits are invalid")]
+    #[error("Digits are invalid")]
     InvalidDigit(usize),
-    #[error("escape sequence is invalid")]
+    #[error("Escape sequence is invalid")]
     InvalidEscape(usize),
-    #[error("identifier is invalid")]
+    #[error("Identifier is invalid")]
     InvalidIdent(usize),
-    #[error("a lone metacharacter '{1}' is found")]
+    #[error("A lone metacharacter '{1}' is found")]
     LoneMetachar(usize, char),
-    #[error("there is nothing to repeat")]
+    #[error("There is nothing to repeat")]
     NothingToRepeat(usize),
-    #[error("out-of-order class range")]
+    #[error("Out-of-order class range")]
     OutOfOrderClassRange(usize),
-    #[error("out-of-order quantifier")]
+    #[error("Out-of-order quantifier")]
     OutOfOrderQuantifier(usize),
-    #[error("there is unclosed group")]
+    #[error("There is unclosed group")]
     UnclosedGroup(usize),
-    #[error("end-of-string is unexpected")]
+    #[error("End-of-string is unexpected")]
     UnexpectedEndOfString(usize),
-    #[error("escape sequence is unknown")]
+    #[error("Escape sequence is unknown")]
     UnknownEscape(usize),
-    #[error("group kind specifier is unknown")]
+    #[error("Group kind specifier is unknown")]
     UnknownGroupKind(usize),
 }
 

@@ -20,9 +20,9 @@ pub struct Regex {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RegexError {
-    #[error(transparent)]
+    #[error("Error on parsing a pattern: {0}")]
     PatternParsingError(regex::ParsingError),
-    #[error(transparent)]
+    #[error("Error on parsing a formula: {0}")]
     FormulaParsingError(presburger::ParsingError),
 }
 
@@ -44,7 +44,7 @@ impl Regex {
         })
     }
 
-    pub fn execute<'a>(&self, input: &'a str) -> Option<Match<'a>> {
-        self.program.execute(input, &self.formula)
+    pub fn execute<'a>(&self, input: &'a str, start_offset: usize) -> Option<Match<'a>> {
+        self.program.execute(input, &self.formula, start_offset)
     }
 }

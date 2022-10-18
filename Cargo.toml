@@ -1,3 +1,9 @@
+[workspace]
+members = [
+  ".",
+  "grepa",
+]
+
 [package]
 name = "repa"
 version = "0.1.0"

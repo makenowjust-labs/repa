@@ -217,9 +217,9 @@ fn items_to_interval_set(items: &Vec<ClassItem>) -> IntervalSet<u32> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Match<'a> {
-    input: &'a str,
-    capture: Vec<usize>,
-    valuation: BTreeMap<Name, Z>,
+    pub input: &'a str,
+    pub capture: Vec<usize>,
+    pub valuation: BTreeMap<Name, Z>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -232,9 +232,14 @@ struct StackItem {
 }
 
 impl Program {
-    pub fn execute<'a>(&self, input: &'a str, formula: &NnfFormula) -> Option<Match<'a>> {
+    pub fn execute<'a>(
+        &self,
+        input: &'a str,
+        formula: &NnfFormula,
+        start_offset: usize,
+    ) -> Option<Match<'a>> {
         let mut stack = Vec::new();
-        let mut offset = 0;
+        let mut offset = start_offset;
         let mut pc = 0;
         let mut counter = vec![u32::MAX; self.counter_size];
         let mut capture = vec![usize::MAX; self.capture_size];
@@ -402,18 +407,18 @@ fn test_execute() {
     let nnf_formula = NnfFormula::from(formula);
 
     assert_eq!(
-        program.execute("", &nnf_formula),
+        program.execute("", &nnf_formula, 0),
         Some(Match {
             input: "",
             capture: vec![0, 0],
             valuation: BTreeMap::new(),
         })
     );
-    assert_eq!(program.execute("x", &nnf_formula), None);
-    assert_eq!(program.execute("y", &nnf_formula), None);
-    assert_eq!(program.execute("z", &nnf_formula), None);
+    assert_eq!(program.execute("x", &nnf_formula, 0), None);
+    assert_eq!(program.execute("y", &nnf_formula, 0), None);
+    assert_eq!(program.execute("z", &nnf_formula, 0), None);
     assert_eq!(
-        program.execute("xyzyzx", &nnf_formula),
+        program.execute("xyzyzx", &nnf_formula, 0),
         Some(Match {
             input: "xyzyzx",
             capture: vec![0, 6],
