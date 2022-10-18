@@ -34,8 +34,9 @@
 use std::cell::Cell;
 use std::fmt::Display;
 
-pub use num_bigint::BigInt as Z;
 use thiserror::Error;
+
+pub use num_bigint::BigInt as Z;
 
 /// A Presburger arithmetic formula.
 #[derive(Clone, Debug, Eq, PartialEq)]
