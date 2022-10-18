@@ -41,6 +41,8 @@ use std::cell::Cell;
 use once_cell::sync::Lazy;
 use thiserror::Error;
 
+use crate::presburger::Name;
+
 /// A regular expression pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Pattern {
@@ -53,7 +55,7 @@ pub enum Pattern {
     Dot,
     Class(bool, Vec<ClassItem>),
     Literal(char),
-    Increment(String),
+    Increment(Name),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -347,7 +349,7 @@ impl<'s> PatternParser<'s> {
             "for" | "all" | "some" | "and" | "or" | "not" | "true" | "false" => {
                 Err(ParsingError::InvalidIdent(start_offset))
             }
-            _ => Ok(Pattern::Increment(name)),
+            _ => Ok(Pattern::Increment(name.into())),
         }
     }
 
@@ -680,7 +682,7 @@ fn test_parse_atom() {
     assert_eq!(parse("+"), Err(ParsingError::NothingToRepeat(0)));
     assert_eq!(parse("{"), Err(ParsingError::UnexpectedEndOfString(1)));
     assert_eq!(parse("{1"), Err(ParsingError::NothingToRepeat(0)));
-    assert_eq!(parse("{x}"), Ok(Pattern::Increment("x".to_string())));
+    assert_eq!(parse("{x}"), Ok(Pattern::Increment("x".into())));
     assert_eq!(
         parse("(?:)"),
         Ok(Pattern::Group(Box::new(Pattern::Concat(Vec::new()))))

@@ -34,7 +34,7 @@
 use std::cell::Cell;
 use std::fmt::Display;
 
-use num_bigint::BigInt;
+pub use num_bigint::{BigInt as Z};
 use thiserror::Error;
 
 /// A Presburger arithmetic formula.
@@ -43,22 +43,22 @@ pub enum Formula {
     True,
     False,
     Comparison(ComparisonOp, Term, Term),
-    Divisible(BigInt, Term),
+    Divisible(Z, Term),
     And(Box<Formula>, Box<Formula>),
     Or(Box<Formula>, Box<Formula>),
     Not(Box<Formula>),
-    ForAll(String, Box<Formula>),
-    ForSome(String, Box<Formula>),
+    ForAll(Name, Box<Formula>),
+    ForSome(Name, Box<Formula>),
 }
 
 /// A Presburger arithmetic term.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Term {
-    Const(BigInt),
-    Var(String),
+    Const(Z),
+    Var(Name),
     Add(Box<Term>, Box<Term>),
     Sub(Box<Term>, Box<Term>),
-    Mul(BigInt, Box<Term>),
+    Mul(Z, Box<Term>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -76,6 +76,9 @@ pub enum ComparisonOp {
     Equal,
     NotEqual,
 }
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Name(String);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Token {
@@ -108,7 +111,7 @@ pub enum TokenKind {
     NotEqual,
     Divisible,
     Ident(String),
-    Number(BigInt),
+    Number(Z),
     EndOfString,
     Uninitialized,
 }
@@ -271,12 +274,12 @@ impl<'s> FormulaParser<'s> {
         let formula = match self.parse_for()? {
             FormulaOrTerm::Formula(formula) => {
                 if is_all {
-                    names.iter().rfold(formula, |formula, name| {
-                        Formula::ForAll(name.to_string(), Box::new(formula))
+                    names.iter().rfold(formula, |formula, s| {
+                        Formula::ForAll(s.into(), Box::new(formula))
                     })
                 } else {
-                    names.iter().rfold(formula, |formula, name| {
-                        Formula::ForSome(name.to_string(), Box::new(formula))
+                    names.iter().rfold(formula, |formula, s| {
+                        Formula::ForSome(s.into(), Box::new(formula))
                     })
                 }
             }
@@ -460,7 +463,7 @@ impl<'s> FormulaParser<'s> {
                     FormulaOrTerm::Formula(_) => Err(ParsingError::ExpectedTerm(error_offset)),
                     FormulaOrTerm::Term(Term::Const(k)) => Ok(FormulaOrTerm::Term(Term::Const(-k))),
                     FormulaOrTerm::Term(term) => Ok(FormulaOrTerm::Term(Term::Mul(
-                        BigInt::from(-1),
+                        Z::from(-1),
                         Box::new(term),
                     ))),
                 }
@@ -472,7 +475,7 @@ impl<'s> FormulaParser<'s> {
     fn parse_atom(&mut self) -> Result<FormulaOrTerm, ParsingError> {
         match &self.current_token.kind {
             TokenKind::Ident(name) => {
-                let term = Term::Var(name.clone());
+                let term = Term::Var(name.into());
                 self.next_token()?;
                 Ok(FormulaOrTerm::Term(term))
             }
@@ -597,7 +600,7 @@ impl<'s> FormulaParser<'s> {
         }
         let end_offset = self.offset();
 
-        let n = match BigInt::parse_bytes(self.source[start_offset..end_offset].as_bytes(), 10) {
+        let n = match Z::parse_bytes(self.source[start_offset..end_offset].as_bytes(), 10) {
             Some(n) => n,
             None => return Err(ParsingError::InvalidNumber(start_offset)),
         };
@@ -661,6 +664,24 @@ impl<'s> FormulaParser<'s> {
     }
 }
 
+impl From<String> for Name {
+    fn from(s: String) -> Name {
+        Name(s)
+    }
+}
+
+impl From<&String> for Name {
+    fn from(s: &String) -> Name {
+        Name(s.clone())
+    }
+}
+
+impl From<&str> for Name {
+    fn from(s: &str) -> Name {
+        Name(s.to_string())
+    }
+}
+
 #[cfg(test)]
 fn parse(source: &str) -> Result<Formula, ParsingError> {
     FormulaParser::new(source).parse()
@@ -689,24 +710,23 @@ fn test_parse_for() {
     assert_eq!(
         parse("for all x. x = 1"),
         Ok(Formula::ForAll(
-            "x".to_string(),
+            "x".into(),
             Box::new(Formula::Comparison(
                 ComparisonOp::Equal,
-                Term::Var("x".to_string()),
-                Term::Const(BigInt::from(1))
+                Term::Var("x".into()),
+                Term::Const(Z::from(1))
             ))
         ))
     );
     assert_eq!(
         parse("for all x, y. x = y"),
         Ok(Formula::ForAll(
-            "x".to_string(),
-            Box::new(Formula::ForAll(
-                "y".to_string(),
+            "x".into(),
+        Box::new(Formula::ForAll("y".into(),
                 Box::new(Formula::Comparison(
                     ComparisonOp::Equal,
-                    Term::Var("x".to_string()),
-                    Term::Var("y".to_string())
+                    Term::Var("x".into()),
+                    Term::Var("y".into())
                 )),
             )),
         ))
@@ -714,11 +734,11 @@ fn test_parse_for() {
     assert_eq!(
         parse("for some x. x = 1"),
         Ok(Formula::ForSome(
-            "x".to_string(),
+            "x".into(),
             Box::new(Formula::Comparison(
                 ComparisonOp::Equal,
-                Term::Var("x".to_string()),
-                Term::Const(BigInt::from(1))
+                Term::Var("x".into()),
+                Term::Const(Z::from(1))
             ))
         ))
     );
@@ -757,48 +777,48 @@ fn test_parse_comparison() {
         parse("1 < 2"),
         Ok(Formula::Comparison(
             ComparisonOp::LessThan,
-            Term::Const(BigInt::from(1)),
-            Term::Const(BigInt::from(2))
+            Term::Const(Z::from(1)),
+            Term::Const(Z::from(2))
         ))
     );
     assert_eq!(
         parse("1 > 2"),
         Ok(Formula::Comparison(
             ComparisonOp::GreaterThan,
-            Term::Const(BigInt::from(1)),
-            Term::Const(BigInt::from(2))
+            Term::Const(Z::from(1)),
+            Term::Const(Z::from(2))
         ))
     );
     assert_eq!(
         parse("1 <= 2"),
         Ok(Formula::Comparison(
             ComparisonOp::LessThanOrEqual,
-            Term::Const(BigInt::from(1)),
-            Term::Const(BigInt::from(2))
+            Term::Const(Z::from(1)),
+            Term::Const(Z::from(2))
         ))
     );
     assert_eq!(
         parse("1 >= 2"),
         Ok(Formula::Comparison(
             ComparisonOp::GreaterThanOrEqual,
-            Term::Const(BigInt::from(1)),
-            Term::Const(BigInt::from(2))
+            Term::Const(Z::from(1)),
+            Term::Const(Z::from(2))
         ))
     );
     assert_eq!(
         parse("1 = 2"),
         Ok(Formula::Comparison(
             ComparisonOp::Equal,
-            Term::Const(BigInt::from(1)),
-            Term::Const(BigInt::from(2))
+            Term::Const(Z::from(1)),
+            Term::Const(Z::from(2))
         ))
     );
     assert_eq!(
         parse("1 != 2"),
         Ok(Formula::Comparison(
             ComparisonOp::NotEqual,
-            Term::Const(BigInt::from(1)),
-            Term::Const(BigInt::from(2))
+            Term::Const(Z::from(1)),
+            Term::Const(Z::from(2))
         ))
     );
 }
@@ -808,8 +828,8 @@ fn test_parse_divisible() {
     assert_eq!(
         parse("1 | 2"),
         Ok(Formula::Divisible(
-            BigInt::from(1),
-            Term::Const(BigInt::from(2))
+            Z::from(1),
+            Term::Const(Z::from(2))
         ))
     );
 }
@@ -819,15 +839,15 @@ fn test_parse_add() {
     assert_eq!(
         parse_term("1 + 2"),
         Ok(Term::Add(
-            Box::new(Term::Const(BigInt::from(1))),
-            Box::new(Term::Const(BigInt::from(2)))
+            Box::new(Term::Const(Z::from(1))),
+            Box::new(Term::Const(Z::from(2)))
         ))
     );
     assert_eq!(
         parse_term("1 - 2"),
         Ok(Term::Sub(
-            Box::new(Term::Const(BigInt::from(1))),
-            Box::new(Term::Const(BigInt::from(2)))
+            Box::new(Term::Const(Z::from(1))),
+            Box::new(Term::Const(Z::from(2)))
         ))
     );
 }
@@ -837,36 +857,36 @@ fn test_parse_mul() {
     assert_eq!(
         parse_term("3x"),
         Ok(Term::Mul(
-            BigInt::from(3),
-            Box::new(Term::Var("x".to_string()))
+            Z::from(3),
+            Box::new(Term::Var("x".into()))
         ))
     );
     assert_eq!(
         parse_term("3 x"),
         Ok(Term::Mul(
-            BigInt::from(3),
-            Box::new(Term::Var("x".to_string()))
+            Z::from(3),
+            Box::new(Term::Var("x".into()))
         ))
     );
     assert_eq!(
         parse_term("3 * x"),
         Ok(Term::Mul(
-            BigInt::from(3),
-            Box::new(Term::Var("x".to_string()))
+            Z::from(3),
+            Box::new(Term::Var("x".into()))
         ))
     );
 }
 
 #[test]
 fn test_parse_prefix() {
-    assert_eq!(parse_term("+1"), Ok(Term::Const(BigInt::from(1))));
-    assert_eq!(parse_term("-42"), Ok(Term::Const(BigInt::from(-42))));
-    assert_eq!(parse_term("+foo"), Ok(Term::Var("foo".to_string())));
+    assert_eq!(parse_term("+1"), Ok(Term::Const(Z::from(1))));
+    assert_eq!(parse_term("-42"), Ok(Term::Const(Z::from(-42))));
+    assert_eq!(parse_term("+foo"), Ok(Term::Var("foo".into())));
     assert_eq!(
         parse_term("-foo"),
         Ok(Term::Mul(
-            BigInt::from(-1),
-            Box::new(Term::Var("foo".to_string()))
+            Z::from(-1),
+            Box::new(Term::Var("foo".into()))
         ))
     );
 }
@@ -875,9 +895,9 @@ fn test_parse_prefix() {
 fn test_parse_atom() {
     assert_eq!(parse("true"), Ok(Formula::True));
     assert_eq!(parse("false"), Ok(Formula::False));
-    assert_eq!(parse_term("1"), Ok(Term::Const(BigInt::from(1))));
-    assert_eq!(parse_term("42"), Ok(Term::Const(BigInt::from(42))));
-    assert_eq!(parse_term("foo"), Ok(Term::Var("foo".to_string())));
+    assert_eq!(parse_term("1"), Ok(Term::Const(Z::from(1))));
+    assert_eq!(parse_term("42"), Ok(Term::Const(Z::from(42))));
+    assert_eq!(parse_term("foo"), Ok(Term::Var("foo".into())));
     assert_eq!(parse("(true)"), Ok(Formula::True));
-    assert_eq!(parse_term("(1)"), Ok(Term::Const(BigInt::from(1))));
+    assert_eq!(parse_term("(1)"), Ok(Term::Const(Z::from(1))));
 }

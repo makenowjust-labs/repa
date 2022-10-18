@@ -1,14 +1,15 @@
 //! Presburger arithmetic formula solver.
+//!
+//! This solver uses Cooper's algorithm.
 
 use std::collections::{BTreeMap, HashSet};
 use std::ops::{Add, Mul, Sub};
 
-use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::sign::Signed;
 use num_traits::{One, Zero};
 
-use crate::presburger::{ComparisonOp, Formula, Term};
+use crate::presburger::{ComparisonOp, Formula, Name, Term, Z};
 
 /// A quantifier-free negation normal form Presburger formula.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,19 +17,19 @@ pub enum NnfFormula {
     True,
     False,
     LessThanZero(LinTerm),
-    Divisible(BigInt, LinTerm),
-    NotDivisible(BigInt, LinTerm),
+    Divisible(Z, LinTerm),
+    NotDivisible(Z, LinTerm),
     And(Box<NnfFormula>, Box<NnfFormula>),
     Or(Box<NnfFormula>, Box<NnfFormula>),
-    BigAnd(String, BigInt, Box<NnfFormula>),
-    BigOr(String, BigInt, Box<NnfFormula>),
+    BigAnd(Name, Z, Box<NnfFormula>),
+    BigOr(Name, Z, Box<NnfFormula>),
 }
 
 /// A linear form of Presburger term.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct LinTerm {
-    constant: BigInt,
-    coefficients: BTreeMap<String, BigInt>,
+    constant: Z,
+    coefficients: BTreeMap<Name, Z>,
 }
 
 impl NnfFormula {
@@ -44,7 +45,7 @@ impl NnfFormula {
         }
     }
 
-    fn divisible<K: Into<BigInt>>(k: K, t: LinTerm) -> NnfFormula {
+    fn divisible<K: Into<Z>>(k: K, t: LinTerm) -> NnfFormula {
         let k = k.into();
 
         if k.abs().is_one() {
@@ -62,7 +63,7 @@ impl NnfFormula {
         NnfFormula::Divisible(k, t)
     }
 
-    fn not_divisible<K: Into<BigInt>>(k: K, t: LinTerm) -> NnfFormula {
+    fn not_divisible<K: Into<Z>>(k: K, t: LinTerm) -> NnfFormula {
         let k = k.into();
 
         if k.abs().is_one() {
@@ -96,23 +97,23 @@ impl NnfFormula {
         }
     }
 
-    fn big_and<S: Into<String>>(x: S, max: BigInt, f: NnfFormula) -> NnfFormula {
+    fn big_and<S: Into<Name>, I: Into<Z>>(x: S, max: I, f: NnfFormula) -> NnfFormula {
         let name = x.into();
         if !f.contains_name(&name) {
             return f;
         }
-        NnfFormula::BigAnd(name, max, Box::new(f))
+        NnfFormula::BigAnd(name, max.into(), Box::new(f))
     }
 
-    fn big_or<S: Into<String>>(x: S, max: BigInt, f: NnfFormula) -> NnfFormula {
+    fn big_or<S: Into<Name>, I: Into<Z>>(x: S, max: I, f: NnfFormula) -> NnfFormula {
         let name = x.into();
         if !f.contains_name(&name) {
             return f;
         }
-        NnfFormula::BigOr(name, max, Box::new(f))
+        NnfFormula::BigOr(name, max.into(), Box::new(f))
     }
 
-    fn contains_name(&self, name: &String) -> bool {
+    fn contains_name(&self, name: &Name) -> bool {
         match self {
             NnfFormula::True | NnfFormula::False => false,
             NnfFormula::LessThanZero(t)
@@ -141,7 +142,7 @@ impl NnfFormula {
         }
     }
 
-    fn coefficients(&self, name: &String) -> HashSet<BigInt> {
+    fn coefficients(&self, name: &Name) -> HashSet<Z> {
         match self {
             NnfFormula::True | NnfFormula::False => HashSet::new(),
             NnfFormula::LessThanZero(t)
@@ -166,7 +167,7 @@ impl NnfFormula {
         }
     }
 
-    fn normalize(self, name: &String, lcm: &BigInt) -> NnfFormula {
+    fn normalize(self, name: &Name, lcm: &Z) -> NnfFormula {
         match self {
             NnfFormula::True => NnfFormula::True,
             NnfFormula::False => NnfFormula::False,
@@ -198,7 +199,7 @@ impl NnfFormula {
         }
     }
 
-    fn divs(&self, name: &String) -> HashSet<BigInt> {
+    fn divs(&self, name: &Name) -> HashSet<Z> {
         match self {
             NnfFormula::True | NnfFormula::False | NnfFormula::LessThanZero(_) => HashSet::new(),
             NnfFormula::Divisible(k, t) | NnfFormula::NotDivisible(k, t) => {
@@ -221,7 +222,7 @@ impl NnfFormula {
         }
     }
 
-    fn assign_min_inf(self, name: &String) -> NnfFormula {
+    fn assign_min_inf(self, name: &Name) -> NnfFormula {
         match self {
             NnfFormula::True => NnfFormula::True,
             NnfFormula::False => NnfFormula::False,
@@ -251,7 +252,7 @@ impl NnfFormula {
         }
     }
 
-    fn bounds(&self, name: &String) -> HashSet<LinTerm> {
+    fn bounds(&self, name: &Name) -> HashSet<LinTerm> {
         match self {
             NnfFormula::True
             | NnfFormula::False
@@ -275,7 +276,7 @@ impl NnfFormula {
         }
     }
 
-    fn assign(self, name: &String, term: &LinTerm) -> NnfFormula {
+    fn assign(self, name: &Name, term: &LinTerm) -> NnfFormula {
         match self {
             NnfFormula::True => NnfFormula::True,
             NnfFormula::False => NnfFormula::False,
@@ -308,20 +309,18 @@ impl NnfFormula {
     /// ```
     /// # use std::collections::BTreeMap;
     /// #
-    /// # use num_bigint::BigInt;
-    /// #
-    /// # use repa::presburger::FormulaParser;
+    /// # use repa::presburger::{FormulaParser, Name, Z};
     /// # use repa::solver::NnfFormula;
     /// #
     /// let formula = FormulaParser::new("x + 1 = 2").parse().unwrap();
     /// let nnf_formula = NnfFormula::from(formula);
     ///
-    /// assert_eq!(nnf_formula.check(&BTreeMap::from([("x".to_string(), BigInt::from(1))])), true);
-    /// assert_eq!(nnf_formula.check(&BTreeMap::from([("x".to_string(), BigInt::from(-1))])), false);
+    /// assert_eq!(nnf_formula.check(&BTreeMap::from([(Name::from("x"), Z::from(1))])), true);
+    /// assert_eq!(nnf_formula.check(&BTreeMap::from([(Name::from("x"), Z::from(-1))])), false);
     ///
     /// assert_eq!(nnf_formula.check(&BTreeMap::new()), false);
     /// ```
-    pub fn check(&self, valuation: &BTreeMap<String, BigInt>) -> bool {
+    pub fn check(&self, valuation: &BTreeMap<Name, Z>) -> bool {
         match self {
             NnfFormula::True => true,
             NnfFormula::False => false,
@@ -332,9 +331,9 @@ impl NnfFormula {
             NnfFormula::Or(l, r) => l.check(valuation) || r.check(valuation),
             NnfFormula::BigAnd(x, max, f) => {
                 let mut vs = valuation.clone();
-                let mut i: BigInt = One::one();
+                let mut i: Z = One::one();
                 while &i <= max {
-                    vs.insert(x.to_string(), i.clone());
+                    vs.insert(x.clone(), i.clone());
                     if !f.check(&vs) {
                         return false;
                     }
@@ -344,9 +343,9 @@ impl NnfFormula {
             }
             NnfFormula::BigOr(x, max, f) => {
                 let mut vs = valuation.clone();
-                let mut i: BigInt = One::one();
+                let mut i: Z = One::one();
                 while &i <= max {
-                    vs.insert(x.to_string(), i.clone());
+                    vs.insert(x.clone(), i.clone());
                     if f.check(&vs) {
                         return true;
                     }
@@ -401,7 +400,7 @@ impl From<Formula> for NnfFormula {
                 NnfFormula::from(Formula::ForSome(x, Box::new(Formula::Not(f)))).negate()
             }
             Formula::ForSome(x, f0) => {
-                fn lcm(ns: HashSet<BigInt>) -> BigInt {
+                fn lcm(ns: HashSet<Z>) -> Z {
                     ns.iter()
                         .map(|n| n.abs())
                         .fold(One::one(), |a, b| &a * &b / a.gcd(&b))
@@ -416,7 +415,7 @@ impl From<Formula> for NnfFormula {
                 let m = lcm(ks);
                 let f2 = NnfFormula::And(
                     Box::new(f1.normalize(&x, &m)),
-                    Box::new(NnfFormula::Divisible(m, LinTerm::var(x.to_string()))),
+                    Box::new(NnfFormula::Divisible(m, LinTerm::var(x.clone()))),
                 );
                 let d = lcm(f2.divs(&x));
                 let f31 = f2.clone().assign_min_inf(&x);
@@ -427,7 +426,7 @@ impl From<Formula> for NnfFormula {
 
                 let f32 = bs
                     .iter()
-                    .map(|b| f2.clone().assign(&x, &(b + &LinTerm::var(x.to_string()))))
+                .map(|b| f2.clone().assign(&x, &(b + &LinTerm::var(x.clone()))))
                     .fold(NnfFormula::False, |l, r| NnfFormula::or(l, r));
                 NnfFormula::big_or(x, d, NnfFormula::or(f31, f32))
             }
@@ -453,7 +452,7 @@ impl Add<&LinTerm> for &LinTerm {
     fn add(self, rhs: &LinTerm) -> LinTerm {
         let mut coefficients = self.coefficients.clone();
         for (x, c2) in rhs.coefficients.iter() {
-            let c1 = coefficients.entry(x.to_string()).or_insert(Zero::zero());
+            let c1 = coefficients.entry(x.clone()).or_insert(Zero::zero());
             *c1 += c2;
         }
         LinTerm::new(&self.constant + &rhs.constant, coefficients)
@@ -490,7 +489,7 @@ impl Sub<&LinTerm> for &LinTerm {
     fn sub(self, rhs: &LinTerm) -> LinTerm {
         let mut coefficients = self.coefficients.clone();
         for (x, c2) in rhs.coefficients.iter() {
-            let c1 = coefficients.entry(x.to_string()).or_insert(Zero::zero());
+            let c1 = coefficients.entry(x.clone()).or_insert(Zero::zero());
             *c1 -= c2;
         }
         LinTerm::new(&self.constant - &rhs.constant, coefficients)
@@ -521,7 +520,7 @@ impl Sub<i64> for &LinTerm {
     }
 }
 
-impl Mul<&LinTerm> for &BigInt {
+impl Mul<&LinTerm> for &Z {
     type Output = LinTerm;
 
     fn mul(self, rhs: &LinTerm) -> LinTerm {
@@ -533,7 +532,7 @@ impl Mul<&LinTerm> for &BigInt {
     }
 }
 
-impl Mul<LinTerm> for BigInt {
+impl Mul<LinTerm> for Z {
     type Output = LinTerm;
 
     fn mul(self, rhs: LinTerm) -> LinTerm {
@@ -545,7 +544,7 @@ impl Mul<&LinTerm> for i64 {
     type Output = LinTerm;
 
     fn mul(self, rhs: &LinTerm) -> LinTerm {
-        &BigInt::from(self) * rhs
+        &Z::from(self) * rhs
     }
 }
 
@@ -553,25 +552,25 @@ impl Mul<LinTerm> for i64 {
     type Output = LinTerm;
 
     fn mul(self, rhs: LinTerm) -> LinTerm {
-        BigInt::from(self) * rhs
+        Z::from(self) * rhs
     }
 }
 
-impl From<BigInt> for LinTerm {
-    fn from(k: BigInt) -> LinTerm {
+impl From<Z> for LinTerm {
+    fn from(k: Z) -> LinTerm {
         LinTerm::new(k, BTreeMap::new())
     }
 }
 
 impl From<i64> for LinTerm {
     fn from(k: i64) -> LinTerm {
-        LinTerm::from(BigInt::from(k))
+        LinTerm::from(Z::from(k))
     }
 }
 
 impl LinTerm {
-    fn new<I: Into<BigInt>>(constant: I, mut coefficients: BTreeMap<String, BigInt>) -> LinTerm {
-        coefficients.retain(|_, v| *v != BigInt::from(0));
+    fn new<I: Into<Z>>(constant: I, mut coefficients: BTreeMap<Name, Z>) -> LinTerm {
+        coefficients.retain(|_, v| *v != Zero::zero());
         LinTerm {
             constant: constant.into(),
             coefficients: coefficients,
@@ -582,36 +581,36 @@ impl LinTerm {
         self.coefficients.is_empty()
     }
 
-    fn var<S: Into<String>>(name: S) -> LinTerm {
+    fn var<S: Into<Name>>(name: S) -> LinTerm {
         LinTerm::new(0, BTreeMap::from([(name.into(), One::one())]))
     }
 
-    fn normalize(self, name: &String, lcm: &BigInt) -> (BigInt, LinTerm) {
+    fn normalize(self, name: &Name, lcm: &Z) -> (Z, LinTerm) {
         match self.coefficients.get(name) {
             Some(k) => {
                 let n = lcm / k.abs();
                 let l = &n * &self.clone().removed(name);
-                let r = k.signum() * LinTerm::var(name.to_string());
+                let r = k.signum() * LinTerm::var(name.clone());
                 (n, l + r)
             }
             None => (One::one(), self),
         }
     }
 
-    fn removed(self, name: &String) -> LinTerm {
+    fn removed(self, name: &Name) -> LinTerm {
         let mut coefficients = self.coefficients.clone();
         coefficients.remove(name);
         LinTerm::new(self.constant, coefficients)
     }
 
-    fn assign(self, name: &String, term: &LinTerm) -> LinTerm {
+    fn assign(self, name: &Name, term: &LinTerm) -> LinTerm {
         match self.coefficients.get(name) {
             Some(k) => self.clone().removed(name) + k * term,
             None => self,
         }
     }
 
-    fn evaluate(&self, valuation: &BTreeMap<String, BigInt>) -> BigInt {
+    fn evaluate(&self, valuation: &BTreeMap<Name, Z>) -> Z {
         let mut sum = self.constant.clone();
         for (x, k) in self.coefficients.iter() {
             sum += k * valuation.get(x).unwrap_or(&Zero::zero());
@@ -635,7 +634,7 @@ fn test_nnf_formula() {
         nnf,
         NnfFormula::big_or(
             "x",
-            BigInt::from(42),
+            42,
             NnfFormula::or(
                 NnfFormula::and(
                     NnfFormula::divisible(42, LinTerm::var("x")),
