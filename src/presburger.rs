@@ -29,7 +29,7 @@
 //! Notes:
 //!
 //!   - A variables name cannot be reserved names in Presburger arithmetic formula (e.g. `for`, `all` and `true`)
-//!   - A number constant cannot be followed by variables and reserved names without whitespaces.
+//!   - A number constant can be followed by variables and reserved names without whitespaces.
 
 use std::cell::Cell;
 use std::fmt::Display;
@@ -47,8 +47,8 @@ pub enum Formula {
     And(Box<Formula>, Box<Formula>),
     Or(Box<Formula>, Box<Formula>),
     Not(Box<Formula>),
-    ForAll(Vec<String>, Box<Formula>),
-    ForSome(Vec<String>, Box<Formula>),
+    ForAll(String, Box<Formula>),
+    ForSome(String, Box<Formula>),
 }
 
 /// A Presburger arithmetic term.
@@ -271,9 +271,13 @@ impl<'s> FormulaParser<'s> {
         let formula = match self.parse_for()? {
             FormulaOrTerm::Formula(formula) => {
                 if is_all {
-                    Formula::ForAll(names, Box::new(formula))
+                    names.iter().rfold(formula, |formula, name| {
+                        Formula::ForAll(name.to_string(), Box::new(formula))
+                    })
                 } else {
-                    Formula::ForSome(names, Box::new(formula))
+                    names.iter().rfold(formula, |formula, name| {
+                        Formula::ForSome(name.to_string(), Box::new(formula))
+                    })
                 }
             }
             FormulaOrTerm::Term(_) => return Err(ParsingError::ExpectedFormula(error_offset)),
@@ -585,7 +589,7 @@ impl<'s> FormulaParser<'s> {
     fn next_number_token(&mut self) -> Result<(), ParsingError> {
         let start_offset = self.offset();
         let mut c = self.current_char()?;
-        while !self.end_of_string() && (c.is_ascii_alphanumeric() || c == '_') {
+        while !self.end_of_string() && c.is_ascii_digit() {
             self.next_char();
             if !self.end_of_string() {
                 c = self.current_char()?;
@@ -685,7 +689,7 @@ fn test_parse_for() {
     assert_eq!(
         parse("for all x. x = 1"),
         Ok(Formula::ForAll(
-            vec!["x".to_string()],
+            "x".to_string(),
             Box::new(Formula::Comparison(
                 ComparisonOp::Equal,
                 Term::Var("x".to_string()),
@@ -696,18 +700,21 @@ fn test_parse_for() {
     assert_eq!(
         parse("for all x, y. x = y"),
         Ok(Formula::ForAll(
-            vec!["x".to_string(), "y".to_string()],
-            Box::new(Formula::Comparison(
-                ComparisonOp::Equal,
-                Term::Var("x".to_string()),
-                Term::Var("y".to_string())
-            ))
+            "x".to_string(),
+            Box::new(Formula::ForAll(
+                "y".to_string(),
+                Box::new(Formula::Comparison(
+                    ComparisonOp::Equal,
+                    Term::Var("x".to_string()),
+                    Term::Var("y".to_string())
+                )),
+            )),
         ))
     );
     assert_eq!(
         parse("for some x. x = 1"),
         Ok(Formula::ForSome(
-            vec!["x".to_string()],
+            "x".to_string(),
             Box::new(Formula::Comparison(
                 ComparisonOp::Equal,
                 Term::Var("x".to_string()),
@@ -827,6 +834,13 @@ fn test_parse_add() {
 
 #[test]
 fn test_parse_mul() {
+    assert_eq!(
+        parse_term("3x"),
+        Ok(Term::Mul(
+            BigInt::from(3),
+            Box::new(Term::Var("x".to_string()))
+        ))
+    );
     assert_eq!(
         parse_term("3 x"),
         Ok(Term::Mul(
