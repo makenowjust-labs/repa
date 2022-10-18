@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use gcollections::ops::constructor::Empty;
-use gcollections::ops::set::{Complement, Contains};
+use gcollections::ops::set::{Complement, Contains, Union};
 use interval::interval_set::{IntervalSet, ToIntervalSet};
 use num_traits::Zero;
 
@@ -201,14 +201,14 @@ fn items_to_interval_set(items: &Vec<ClassItem>) -> IntervalSet<u32> {
     let mut set = IntervalSet::empty();
     for item in items {
         match item {
-            ClassItem::Literal(c) => set.extend((*c as u32, *c as u32).to_interval_set()),
-            ClassItem::Range(l, r) => set.extend((*l as u32, *r as u32).to_interval_set()),
+            ClassItem::Literal(c) => set = set.union(&(*c as u32, *c as u32).to_interval_set()),
+            ClassItem::Range(l, r) => set = set.union(&(*l as u32, *r as u32).to_interval_set()),
             ClassItem::Class(not, items) => {
                 let mut subset = items_to_interval_set(items);
                 if *not {
                     subset = subset.complement();
                 }
-                set.extend(subset);
+                set = set.union(&subset);
             }
         }
     }
