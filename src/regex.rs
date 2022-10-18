@@ -85,27 +85,23 @@ pub enum ClassItem {
     Class(bool, Vec<ClassItem>),
 }
 
-static DIGIT: Lazy<Vec<ClassItem>> = Lazy::new(|| {
-    let mut v = Vec::new();
-    v.push(ClassItem::Range('0', '9'));
-    v
-});
+static DIGIT: Lazy<Vec<ClassItem>> = Lazy::new(|| vec![ClassItem::Range('0', '9')]);
 
 static WORD: Lazy<Vec<ClassItem>> = Lazy::new(|| {
-    let mut v = Vec::new();
-    v.push(ClassItem::Range('0', '9'));
-    v.push(ClassItem::Range('A', 'Z'));
-    v.push(ClassItem::Literal('_'));
-    v.push(ClassItem::Range('a', 'z'));
-    v
+    vec![
+        ClassItem::Range('0', '9'),
+        ClassItem::Range('A', 'Z'),
+        ClassItem::Literal('_'),
+        ClassItem::Range('a', 'z'),
+    ]
 });
 
 static SPACE: Lazy<Vec<ClassItem>> = Lazy::new(|| {
-    let mut v = Vec::new();
-    v.push(ClassItem::Range('\t', '\u{b}'));
-    v.push(ClassItem::Literal('\r'));
-    v.push(ClassItem::Literal(' '));
-    v
+    vec![
+        ClassItem::Range('\t', '\u{b}'),
+        ClassItem::Literal('\r'),
+        ClassItem::Literal(' '),
+    ]
 });
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]

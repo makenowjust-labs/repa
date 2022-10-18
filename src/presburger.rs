@@ -34,7 +34,7 @@
 use std::cell::Cell;
 use std::fmt::Display;
 
-pub use num_bigint::{BigInt as Z};
+pub use num_bigint::BigInt as Z;
 use thiserror::Error;
 
 /// A Presburger arithmetic formula.
@@ -462,10 +462,9 @@ impl<'s> FormulaParser<'s> {
                 match self.parse_prefix()? {
                     FormulaOrTerm::Formula(_) => Err(ParsingError::ExpectedTerm(error_offset)),
                     FormulaOrTerm::Term(Term::Const(k)) => Ok(FormulaOrTerm::Term(Term::Const(-k))),
-                    FormulaOrTerm::Term(term) => Ok(FormulaOrTerm::Term(Term::Mul(
-                        Z::from(-1),
-                        Box::new(term),
-                    ))),
+                    FormulaOrTerm::Term(term) => {
+                        Ok(FormulaOrTerm::Term(Term::Mul(Z::from(-1), Box::new(term))))
+                    }
                 }
             }
             _ => self.parse_atom(),
@@ -722,7 +721,8 @@ fn test_parse_for() {
         parse("for all x, y. x = y"),
         Ok(Formula::ForAll(
             "x".into(),
-        Box::new(Formula::ForAll("y".into(),
+            Box::new(Formula::ForAll(
+                "y".into(),
                 Box::new(Formula::Comparison(
                     ComparisonOp::Equal,
                     Term::Var("x".into()),
@@ -827,10 +827,7 @@ fn test_parse_comparison() {
 fn test_parse_divisible() {
     assert_eq!(
         parse("1 | 2"),
-        Ok(Formula::Divisible(
-            Z::from(1),
-            Term::Const(Z::from(2))
-        ))
+        Ok(Formula::Divisible(Z::from(1), Term::Const(Z::from(2))))
     );
 }
 
@@ -856,24 +853,15 @@ fn test_parse_add() {
 fn test_parse_mul() {
     assert_eq!(
         parse_term("3x"),
-        Ok(Term::Mul(
-            Z::from(3),
-            Box::new(Term::Var("x".into()))
-        ))
+        Ok(Term::Mul(Z::from(3), Box::new(Term::Var("x".into()))))
     );
     assert_eq!(
         parse_term("3 x"),
-        Ok(Term::Mul(
-            Z::from(3),
-            Box::new(Term::Var("x".into()))
-        ))
+        Ok(Term::Mul(Z::from(3), Box::new(Term::Var("x".into()))))
     );
     assert_eq!(
         parse_term("3 * x"),
-        Ok(Term::Mul(
-            Z::from(3),
-            Box::new(Term::Var("x".into()))
-        ))
+        Ok(Term::Mul(Z::from(3), Box::new(Term::Var("x".into()))))
     );
 }
 
@@ -884,10 +872,7 @@ fn test_parse_prefix() {
     assert_eq!(parse_term("+foo"), Ok(Term::Var("foo".into())));
     assert_eq!(
         parse_term("-foo"),
-        Ok(Term::Mul(
-            Z::from(-1),
-            Box::new(Term::Var("foo".into()))
-        ))
+        Ok(Term::Mul(Z::from(-1), Box::new(Term::Var("foo".into()))))
     );
 }
 

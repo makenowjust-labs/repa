@@ -426,7 +426,7 @@ impl From<Formula> for NnfFormula {
 
                 let f32 = bs
                     .iter()
-                .map(|b| f2.clone().assign(&x, &(b + &LinTerm::var(x.clone()))))
+                    .map(|b| f2.clone().assign(&x, &(b + &LinTerm::var(x.clone()))))
                     .fold(NnfFormula::False, |l, r| NnfFormula::or(l, r));
                 NnfFormula::big_or(x, d, NnfFormula::or(f31, f32))
             }
