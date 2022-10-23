@@ -543,6 +543,16 @@ fn parse_pattern(s: &str) -> Pattern {
     PatternParser::new(s).parse().unwrap()
 }
 
+#[cfg(test)]
+fn execute_pattern(p: &str, f: &str, input: &str) -> bool {
+    let pattern = parse_pattern(p);
+    let formula = parse_formula(f);
+    let program = ProgramBuilder::new().compile(&pattern);
+    let nnf_formula = NnfFormula::from(formula);
+
+    program.execute(input, &nnf_formula, 0).is_some()
+}
+
 #[test]
 fn test_can_be_empty() {
     assert_eq!(can_be_empty(&parse_pattern("")), true);
@@ -585,4 +595,64 @@ fn test_execute() {
             ]),
         })
     );
+
+    // literal:
+    assert_eq!(execute_pattern("x", "true", "x"), true);
+    assert_eq!(execute_pattern("x", "true", "y"), false);
+
+    // class:
+    assert_eq!(execute_pattern("[xy]", "true", "x"), true);
+    assert_eq!(execute_pattern("[xy]", "true", "y"), true);
+    assert_eq!(execute_pattern("[xy]", "true", "z"), false);
+    assert_eq!(execute_pattern("[^xy]", "true", "z"), true);
+
+    // concat:
+    assert_eq!(execute_pattern("xy", "true", "xy"), true);
+    assert_eq!(execute_pattern("xy", "true", "yz"), false);
+
+    // alternation:
+    assert_eq!(execute_pattern("x|y", "true", "x"), true);
+    assert_eq!(execute_pattern("x|y", "true", "y"), true);
+    assert_eq!(execute_pattern("x|y", "true", "z"), false);
+
+    // repetition:
+    assert_eq!(execute_pattern("^a?$", "true", ""), true);
+    assert_eq!(execute_pattern("^a?$", "true", "a"), true);
+    assert_eq!(execute_pattern("^a?$", "true", "aa"), false);
+    assert_eq!(execute_pattern("^a*$", "true", ""), true);
+    assert_eq!(execute_pattern("^a*$", "true", "a"), true);
+    assert_eq!(execute_pattern("^a*$", "true", "aaa"), true);
+    assert_eq!(execute_pattern("^a*$", "true", ""), true);
+    assert_eq!(execute_pattern("^a*$", "true", "a"), true);
+    assert_eq!(execute_pattern("^a*$", "true", "b"), false);
+    assert_eq!(execute_pattern("^a*$", "true", "aaa"), true);
+    assert_eq!(execute_pattern("^a*$", "true", "aba"), false);
+    assert_eq!(execute_pattern("^a+$", "true", ""), false);
+    assert_eq!(execute_pattern("^a+$", "true", "a"), true);
+    assert_eq!(execute_pattern("^a+$", "true", "b"), false);
+    assert_eq!(execute_pattern("^a+$", "true", "aaa"), true);
+    assert_eq!(execute_pattern("^a+$", "true", "aba"), false);
+    assert_eq!(execute_pattern("^a{2}$", "true", ""), false);
+    assert_eq!(execute_pattern("^a{2}$", "true", "a"), false);
+    assert_eq!(execute_pattern("^a{2}$", "true", "aa"), true);
+    assert_eq!(execute_pattern("^a{2}$", "true", "aaa"), false);
+    assert_eq!(execute_pattern("^a{2,}$", "true", ""), false);
+    assert_eq!(execute_pattern("^a{2,}$", "true", "a"), false);
+    assert_eq!(execute_pattern("^a{2,}$", "true", "aa"), true);
+    assert_eq!(execute_pattern("^a{2,}$", "true", "aaa"), true);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", ""), false);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", "a"), false);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", "b"), false);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", "aa"), true);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", "aaa"), true);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", "aba"), false);
+    assert_eq!(execute_pattern("^a{2,3}$", "true", "aaaa"), false);
+
+    // assertion:
+    assert_eq!(execute_pattern("aa\n^", "true", "aa\n"), true);
+    assert_eq!(execute_pattern("aa$", "true", "aa\n"), true);
+    assert_eq!(execute_pattern("\\A", "true", ""), true);
+    assert_eq!(execute_pattern("\\z", "true", ""), true);
+    assert_eq!(execute_pattern("a\\b ", "true", "a "), true);
+    assert_eq!(execute_pattern("a\\Ba", "true", "aa"), true);
 }
