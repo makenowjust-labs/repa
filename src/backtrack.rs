@@ -2,10 +2,12 @@
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::fmt::{self, Display};
 use std::rc::Rc;
 
+use gcollections::ops::bounded::Bounded;
 use gcollections::ops::constructor::Empty;
-use gcollections::ops::set::{Complement, Contains, Union};
+use gcollections::ops::set::{Contains, Difference, Union};
 use interval::interval_set::{IntervalSet, ToIntervalSet};
 use num_traits::Zero;
 
@@ -20,7 +22,7 @@ pub enum Op {
     Jump(usize),
     Fork(usize),
     Assert(AssertionKind),
-    SavePos(usize),
+    SaveOffset(usize),
     NullCheck(usize),
     ResetCounter(usize),
     IncrementCounter(usize),
@@ -206,10 +208,10 @@ impl ProgramBuilder {
                 self.compile_pattern(child);
             }
             Pattern::Capture(i, child) => {
-                self.capture_size = self.capture_size.max((i + 1) * 2 + 2);
-                self.ops.push(Op::Record((i + 1) * 2));
+                self.capture_size = self.capture_size.max(i * 2 + 2);
+                self.ops.push(Op::Record(i * 2));
                 self.compile_pattern(child);
-                self.ops.push(Op::Record((i + 1) * 2 + 1));
+                self.ops.push(Op::Record(i * 2 + 1));
             }
             Pattern::Dot => self.ops.push(Op::Dot),
             Pattern::Literal(c) => self.ops.push(Op::Literal(*c)),
@@ -228,7 +230,7 @@ impl ProgramBuilder {
         }
 
         let register = self.next_register();
-        self.ops.push(Op::SavePos(*register));
+        self.ops.push(Op::SaveOffset(*register));
         self.compile_pattern(pattern);
         self.ops.push(Op::NullCheck(*register));
     }
@@ -253,7 +255,9 @@ fn items_to_interval_set(items: &Vec<ClassItem>) -> IntervalSet<u32> {
             ClassItem::Class(not, items) => {
                 let mut subset = items_to_interval_set(items);
                 if *not {
-                    subset = subset.complement();
+                    subset = (0 as u32, char::MAX as u32)
+                        .to_interval_set()
+                        .difference(&subset);
                 }
                 set = set.union(&subset);
             }
@@ -277,6 +281,76 @@ fn can_be_empty(pattern: &Pattern) -> bool {
         Pattern::Assertion(_) | Pattern::Increment(_) => true,
         Pattern::Group(child) | Pattern::Capture(_, child) => can_be_empty(child),
         Pattern::Dot | Pattern::Literal(_) | Pattern::Class(_, _) => false,
+    }
+}
+
+impl Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Op::Dummy => write!(f, "dummy"),
+            Op::Match => write!(f, "match"),
+            Op::Jump(addr) => write!(f, "jump\t\t@{:04}", addr),
+            Op::Fork(addr) => write!(f, "fork\t\t@{:04}", addr),
+            Op::Assert(k) => match k {
+                AssertionKind::StartLine => write!(f, "assert\t\tstart-line"),
+                AssertionKind::EndLine => write!(f, "assert\t\tend-line"),
+                AssertionKind::StartText => write!(f, "assert\t\tstart-text"),
+                AssertionKind::EndText => write!(f, "assert\t\tend-text"),
+                AssertionKind::WordBoundary => write!(f, "assert\t\tword-boundary"),
+                AssertionKind::NotWordBoundary => write!(f, "assert\t\tnot-word-boundary"),
+            },
+            Op::SaveOffset(reg) => write!(f, "save-offset\t${}", reg),
+            Op::NullCheck(reg) => write!(f, "null-check\t${}", reg),
+            Op::ResetCounter(reg) => write!(f, "reset-counter\t${}", reg),
+            Op::IncrementCounter(reg) => write!(f, "inc-counter\t${}", reg),
+            Op::Compare(Compare {
+                register,
+                value,
+                jump,
+            }) => write!(f, "compare\t\t${} >= {}\t@{:04}", register, value, jump),
+            Op::Literal(c) => write!(f, "literal\t\t'{}'", c.escape_debug()),
+            Op::Class(Class { not, set }) => {
+                fn write_u32(f: &mut std::fmt::Formatter<'_>, x: u32) -> fmt::Result {
+                    match char::from_u32(x) {
+                        Some(c) => match c {
+                            '-' | ']' => write!(f, "\\{}", c),
+                            _ => write!(f, "{}", c.escape_debug()),
+                        },
+                        None => write!(f, "\\u{:04x}", x),
+                    }
+                }
+                write!(f, "class\t\t[")?;
+                if *not {
+                    write!(f, "^")?;
+                }
+                for i in set.iter() {
+                    let (l, r) = (i.lower(), i.upper());
+                    if l == r {
+                        write_u32(f, l)?;
+                    } else if l + 1 == r {
+                        write_u32(f, l)?;
+                        write_u32(f, r)?;
+                    } else {
+                        write_u32(f, l)?;
+                        write!(f, "-")?;
+                        write_u32(f, r)?;
+                    }
+                }
+                write!(f, "]")
+            }
+            Op::Dot => write!(f, "dot"),
+            Op::Record(cap) => write!(f, "record\t\t&{}", cap),
+            Op::IncrementVar(v) => write!(f, "inc-var\t\t{}", v.to_string()),
+        }
+    }
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, op) in self.ops.iter().enumerate() {
+            writeln!(f, "@{:04}: {}", i, op)?;
+        }
+        Ok(())
     }
 }
 
@@ -365,7 +439,7 @@ impl Program {
                         (prev_is_word != curr_is_word) == (k == &AssertionKind::WordBoundary)
                     }
                 },
-                Op::SavePos(x) => {
+                Op::SaveOffset(x) => {
                     register[*x] = offset;
                     true
                 }

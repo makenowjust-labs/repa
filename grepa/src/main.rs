@@ -15,6 +15,9 @@ struct Args {
     formula: String,
     /// An input filename to find. If it is omitted, we use stdin instead.
     input: Option<String>,
+    // Shows debug information.
+    #[arg(short, long)]
+    debug: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -41,6 +44,10 @@ fn main() -> io::Result<()> {
             process::exit(1);
         }
     };
+
+    if args.debug {
+        println!("{}", regex.program);
+    }
 
     let file = File::open(args.input.unwrap_or("/dev/stdin".to_string()))?;
     let lines = io::BufReader::new(file).lines();

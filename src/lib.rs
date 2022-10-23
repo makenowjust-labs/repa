@@ -14,8 +14,8 @@ pub use backtrack::Match;
 
 #[derive(Clone, Debug)]
 pub struct Regex {
-    program: Program,
-    formula: NnfFormula,
+    pub program: Program,
+    pub formula: NnfFormula,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]

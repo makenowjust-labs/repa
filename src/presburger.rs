@@ -682,6 +682,12 @@ impl From<&str> for Name {
     }
 }
 
+impl ToString for Name {
+    fn to_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
 #[cfg(test)]
 fn parse(source: &str) -> Result<Formula, ParsingError> {
     FormulaParser::new(source).parse()
