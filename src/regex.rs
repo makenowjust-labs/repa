@@ -63,9 +63,9 @@ pub enum RepetitionKind {
     ZeroOrOne,
     ZeroOrMore,
     OneOrMore,
-    Exactly(u32),
-    AtLeast(u32),
-    Bounded(u32, u32),
+    Exactly(usize),
+    AtLeast(usize),
+    Bounded(usize, usize),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -285,7 +285,7 @@ impl<'s> PatternParser<'s> {
         }
     }
 
-    fn parse_digits(&self) -> Result<u32, ParsingError> {
+    fn parse_digits(&self) -> Result<usize, ParsingError> {
         debug_assert!(self.current_char()?.is_ascii_digit());
 
         let start_offset = self.offset();

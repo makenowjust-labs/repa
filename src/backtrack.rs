@@ -1,6 +1,8 @@
 //! Backtrack-based regular-expression matching engine.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use gcollections::ops::constructor::Empty;
 use gcollections::ops::set::{Complement, Contains, Union};
@@ -18,6 +20,8 @@ pub enum Op {
     Jump(usize),
     Fork(usize),
     Assert(AssertionKind),
+    SavePos(usize),
+    NullCheck(usize),
     ResetCounter(usize),
     IncrementCounter(usize),
     Compare(Compare),
@@ -36,30 +40,48 @@ pub struct Class {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Compare {
-    counter: usize,
-    value: u32,
+    register: usize,
+    value: usize,
     jump: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct Program {
     ops: Vec<Op>,
-    counter_size: usize,
+    register_size: usize,
     capture_size: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct ProgramBuilder {
     ops: Vec<Op>,
-    counter_size: usize,
+    next_register: Rc<Cell<usize>>,
+    register_size: usize,
     capture_size: usize,
+}
+
+#[derive(Debug)]
+struct Register(Rc<Cell<usize>>, usize);
+
+impl<'a> std::ops::Deref for Register {
+    type Target = usize;
+    fn deref(&self) -> &usize {
+        &self.1
+    }
+}
+
+impl<'a> Drop for Register {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() - 1);
+    }
 }
 
 impl ProgramBuilder {
     pub fn new() -> ProgramBuilder {
         ProgramBuilder {
             ops: Vec::new(),
-            counter_size: 0,
+            next_register: Rc::new(Cell::new(0)),
+            register_size: 0,
             capture_size: 2,
         }
     }
@@ -72,7 +94,7 @@ impl ProgramBuilder {
 
         Program {
             ops: self.ops.clone(),
-            counter_size: self.counter_size,
+            register_size: self.register_size,
             capture_size: self.capture_size,
         }
     }
@@ -112,28 +134,33 @@ impl ProgramBuilder {
             | Pattern::Repetition(child, RepetitionKind::AtLeast(0)) => {
                 let fork = self.ops.len();
                 self.ops.push(Op::Dummy);
-                self.compile_pattern(child);
+                self.compile_pattern_null_check(child);
                 self.ops.push(Op::Jump(fork));
                 self.ops[fork] = Op::Fork(self.ops.len());
             }
             Pattern::Repetition(child, RepetitionKind::OneOrMore)
             | Pattern::Repetition(child, RepetitionKind::AtLeast(1)) => {
-                let start = self.ops.len();
                 self.compile_pattern(child);
-                self.ops.push(Op::Fork(self.ops.len() + 2));
-                self.ops.push(Op::Jump(start));
+                let fork = self.ops.len();
+                self.ops.push(Op::Dummy);
+                self.compile_pattern_null_check(child);
+                self.ops.push(Op::Jump(fork));
+                self.ops[fork] = Op::Fork(self.ops.len());
+            }
+            Pattern::Repetition(_, RepetitionKind::Exactly(0)) => {}
+            Pattern::Repetition(child, RepetitionKind::Exactly(1)) => {
+                self.compile_pattern(child);
             }
             Pattern::Repetition(child, RepetitionKind::Exactly(n)) => {
-                let counter = self.counter_size;
-                self.counter_size += 1;
-                self.ops.push(Op::ResetCounter(counter));
+                let register = self.next_register();
+                self.ops.push(Op::ResetCounter(*register));
                 let compare = self.ops.len();
                 self.ops.push(Op::Dummy);
                 self.compile_pattern(child);
-                self.ops.push(Op::IncrementCounter(counter));
+                self.ops.push(Op::IncrementCounter(*register));
                 self.ops.push(Op::Jump(compare));
                 self.ops[compare] = Op::Compare(Compare {
-                    counter: counter,
+                    register: *register,
                     value: *n,
                     jump: self.ops.len(),
                 });
@@ -149,27 +176,26 @@ impl ProgramBuilder {
                 ));
             }
             Pattern::Repetition(child, RepetitionKind::Bounded(n, m)) => {
-                let counter = self.counter_size;
-                self.counter_size += 1;
-                self.ops.push(Op::ResetCounter(counter));
+                let register = self.next_register();
+                self.ops.push(Op::ResetCounter(*register));
                 let compare1 = self.ops.len();
                 self.ops.push(Op::Dummy);
                 self.compile_pattern(child);
-                self.ops.push(Op::IncrementCounter(counter));
+                self.ops.push(Op::IncrementCounter(*register));
                 self.ops.push(Op::Jump(compare1));
                 self.ops[compare1] = Op::Compare(Compare {
-                    counter: counter,
+                    register: *register,
                     value: *n,
                     jump: self.ops.len(),
                 });
                 let compare2 = self.ops.len();
                 self.ops.push(Op::Dummy);
                 self.ops.push(Op::Dummy);
-                self.compile_pattern(child);
-                self.ops.push(Op::IncrementCounter(counter));
+                self.compile_pattern_null_check(child);
+                self.ops.push(Op::IncrementCounter(*register));
                 self.ops.push(Op::Jump(compare2));
                 self.ops[compare2] = Op::Compare(Compare {
-                    counter: counter,
+                    register: *register,
                     value: *m,
                     jump: self.ops.len(),
                 });
@@ -194,6 +220,27 @@ impl ProgramBuilder {
             Pattern::Increment(x) => self.ops.push(Op::IncrementVar(x.clone())),
         }
     }
+
+    fn compile_pattern_null_check(&mut self, pattern: &Pattern) {
+        if !can_be_empty(pattern) {
+            self.compile_pattern(pattern);
+            return;
+        }
+
+        let register = self.next_register();
+        self.ops.push(Op::SavePos(*register));
+        self.compile_pattern(pattern);
+        self.ops.push(Op::NullCheck(*register));
+    }
+
+    fn next_register(&mut self) -> Register {
+        let register = self.next_register.get();
+        if self.register_size == register {
+            self.register_size += 1;
+        }
+        self.next_register.set(register + 1);
+        Register(Rc::clone(&self.next_register), register)
+    }
 }
 
 /// Converts the given items to an interval set.
@@ -215,6 +262,24 @@ fn items_to_interval_set(items: &Vec<ClassItem>) -> IntervalSet<u32> {
     set
 }
 
+fn can_be_empty(pattern: &Pattern) -> bool {
+    match pattern {
+        Pattern::Alternation(children) => children.iter().any(|p| can_be_empty(p)),
+        Pattern::Concat(children) => children.iter().all(|p| can_be_empty(p)),
+        Pattern::Repetition(child, kind) => match kind {
+            RepetitionKind::ZeroOrOne
+            | RepetitionKind::ZeroOrMore
+            | RepetitionKind::Exactly(0)
+            | RepetitionKind::AtLeast(0)
+            | RepetitionKind::Bounded(0, _) => true,
+            _ => can_be_empty(child),
+        },
+        Pattern::Assertion(_) | Pattern::Increment(_) => true,
+        Pattern::Group(child) | Pattern::Capture(_, child) => can_be_empty(child),
+        Pattern::Dot | Pattern::Literal(_) | Pattern::Class(_, _) => false,
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Match<'a> {
     pub input: &'a str,
@@ -226,7 +291,7 @@ pub struct Match<'a> {
 struct StackItem {
     offset: usize,
     pc: usize,
-    counter: Vec<u32>,
+    register: Vec<usize>,
     capture: Vec<usize>,
     valuation: BTreeMap<Name, Z>,
 }
@@ -241,7 +306,7 @@ impl Program {
         let mut stack = Vec::new();
         let mut offset = start_offset;
         let mut pc = 0;
-        let mut counter = vec![u32::MAX; self.counter_size];
+        let mut register = vec![usize::MAX; self.register_size];
         let mut capture = vec![usize::MAX; self.capture_size];
         let mut valuation = BTreeMap::new();
 
@@ -266,7 +331,7 @@ impl Program {
                     stack.push(StackItem {
                         offset: offset,
                         pc: *next_pc,
-                        counter: counter.clone(),
+                        register: register.clone(),
                         capture: capture.clone(),
                         valuation: valuation.clone(),
                     });
@@ -300,16 +365,21 @@ impl Program {
                         (prev_is_word != curr_is_word) == (k == &AssertionKind::WordBoundary)
                     }
                 },
+                Op::SavePos(x) => {
+                    register[*x] = offset;
+                    true
+                }
+                Op::NullCheck(x) => register[*x] != offset,
                 Op::ResetCounter(x) => {
-                    counter[*x] = 0;
+                    register[*x] = 0;
                     true
                 }
                 Op::IncrementCounter(x) => {
-                    counter[*x] += 1;
+                    register[*x] += 1;
                     true
                 }
                 Op::Compare(cmp) => {
-                    if counter[cmp.counter] >= cmp.value {
+                    if register[cmp.register] >= cmp.value {
                         pc = cmp.jump;
                         continue;
                     }
@@ -367,7 +437,7 @@ impl Program {
                     Some(item) => {
                         offset = item.offset;
                         pc = item.pc;
-                        counter = item.counter;
+                        register = item.register;
                         capture = item.capture;
                         valuation = item.valuation;
                     }
@@ -377,7 +447,7 @@ impl Program {
                         }
                         offset += 1;
                         pc = 0;
-                        counter = vec![u32::MAX; self.counter_size];
+                        register = vec![usize::MAX; self.register_size];
                         capture = vec![usize::MAX; self.capture_size];
                         valuation = BTreeMap::new();
                     }
@@ -397,6 +467,18 @@ fn parse_formula(s: &str) -> crate::presburger::Formula {
 fn parse_pattern(s: &str) -> Pattern {
     use crate::regex::PatternParser;
     PatternParser::new(s).parse().unwrap()
+}
+
+#[test]
+fn test_can_be_empty() {
+    assert_eq!(can_be_empty(&parse_pattern("")), true);
+    assert_eq!(can_be_empty(&parse_pattern("a")), false);
+    assert_eq!(can_be_empty(&parse_pattern("[ab]")), false);
+    assert_eq!(can_be_empty(&parse_pattern("\\b")), true);
+    assert_eq!(can_be_empty(&parse_pattern("(a)*")), true);
+    assert_eq!(can_be_empty(&parse_pattern("(a)+")), false);
+    assert_eq!(can_be_empty(&parse_pattern("a|b")), false);
+    assert_eq!(can_be_empty(&parse_pattern("a|")), true);
 }
 
 #[test]
