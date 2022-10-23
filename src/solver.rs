@@ -3,6 +3,7 @@
 //! This solver uses Cooper's algorithm.
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::{self, Display};
 use std::ops::{Add, Mul, Sub};
 
 use num_integer::Integer;
@@ -616,6 +617,108 @@ impl LinTerm {
             sum += k * valuation.get(x).unwrap_or(&Zero::zero());
         }
         sum
+    }
+}
+
+impl Display for NnfFormula {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NnfFormula::True => write!(f, "true"),
+            NnfFormula::False => write!(f, "false"),
+            NnfFormula::LessThanZero(t) => write!(f, "{} < 0", t),
+            NnfFormula::Divisible(k, t) => write!(f, "{} | {}", k, t),
+            NnfFormula::NotDivisible(k, t) => write!(f, "not {} | {}", k, t),
+            NnfFormula::And(l, r) => {
+                write!(f, "{} and {}", wrap(AND_PREC - 1, l), wrap(AND_PREC, r))
+            }
+            NnfFormula::Or(l, r) => write!(f, "{} or {}", wrap(OR_PREC - 1, l), wrap(OR_PREC, r)),
+            NnfFormula::BigAnd(x, max, formula) => write!(
+                f,
+                "for all {} in [0, {}]. {}",
+                x.to_string(),
+                max,
+                wrap(BIG_OP_PREC - 1, formula)
+            ),
+            NnfFormula::BigOr(x, max, formula) => write!(
+                f,
+                "for some {} in [0, {}]. {}",
+                x.to_string(),
+                max,
+                wrap(BIG_OP_PREC - 1, formula)
+            ),
+        }
+    }
+}
+
+impl Display for LinTerm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut wrote = false;
+        if !self.constant.is_zero() {
+            write!(f, "{}", self.constant)?;
+            wrote = true;
+        }
+        for (name, coefficient) in self.coefficients.iter() {
+            if wrote {
+                if coefficient.is_negative() {
+                    write!(f, " - ")?;
+                } else {
+                    write!(f, " + ")?;
+                }
+            } else {
+                if coefficient.is_negative() {
+                    write!(f, "-")?;
+                }
+            }
+
+            if coefficient.abs().is_one() {
+                write!(f, "{}", name.to_string())?;
+            } else {
+                write!(f, "{}{}", coefficient.abs(), name.to_string())?;
+            }
+
+            wrote = true;
+        }
+        Ok(())
+    }
+}
+
+const BIG_OP_PREC: u32 = 1;
+const OR_PREC: u32 = 2;
+const AND_PREC: u32 = 3;
+const ATOM_PREC: u32 = 4;
+
+fn prec(f: &NnfFormula) -> u32 {
+    match f {
+        NnfFormula::True
+        | NnfFormula::False
+        | NnfFormula::LessThanZero(_)
+        | NnfFormula::Divisible(_, _)
+        | NnfFormula::NotDivisible(_, _) => ATOM_PREC,
+        NnfFormula::And(_, _) => AND_PREC,
+        NnfFormula::Or(_, _) => OR_PREC,
+        NnfFormula::BigAnd(_, _, _) | NnfFormula::BigOr(_, _, _) => BIG_OP_PREC,
+    }
+}
+
+enum Wrap<'a> {
+    Wrap(&'a NnfFormula),
+    NoWrap(&'a NnfFormula),
+}
+
+fn wrap<'a>(p: u32, f: &'a NnfFormula) -> Wrap<'a> {
+    if p < prec(&f) {
+        Wrap::NoWrap(f)
+    } else {
+        Wrap::Wrap(f)
+    }
+}
+
+impl<'a> Display for Wrap<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Wrap::Wrap(formula) => write!(f, "({})", formula),
+            Wrap::NoWrap(formula) => write!(f, "{}", formula),
+        }
     }
 }
 

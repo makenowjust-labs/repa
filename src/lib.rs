@@ -3,6 +3,8 @@ pub mod presburger;
 pub mod regex;
 pub mod solver;
 
+use std::fmt::{self, Display};
+
 use thiserror::Error;
 
 use backtrack::{Program, ProgramBuilder};
@@ -14,8 +16,8 @@ pub use backtrack::Match;
 
 #[derive(Clone, Debug)]
 pub struct Regex {
-    pub program: Program,
-    pub formula: NnfFormula,
+    program: Program,
+    formula: NnfFormula,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -46,5 +48,15 @@ impl Regex {
 
     pub fn execute<'a>(&self, input: &'a str, start_offset: usize) -> Option<Match<'a>> {
         self.program.execute(input, &self.formula, start_offset)
+    }
+}
+
+impl Display for Regex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "program:")?;
+        for line in self.program.to_string().lines() {
+            write!(f, "  {}\n", line)?;
+        }
+        write!(f, "formula: {}", self.formula)
     }
 }

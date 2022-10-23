@@ -494,7 +494,7 @@ impl<'s> FormulaParser<'s> {
             }
             TokenKind::LeftParen => {
                 self.next_token()?;
-                let formula_or_term = self.parse_or()?;
+                let formula_or_term = self.parse_for()?;
                 if self.current_token.kind != TokenKind::RightParen {
                     return Err(ParsingError::ExpectedChar(self.current_token.offset, ')'));
                 }

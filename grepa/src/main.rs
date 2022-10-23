@@ -46,7 +46,7 @@ fn main() -> io::Result<()> {
     };
 
     if args.debug {
-        println!("{}", regex.program);
+        println!("{}", regex);
     }
 
     let file = File::open(args.input.unwrap_or("/dev/stdin".to_string()))?;
